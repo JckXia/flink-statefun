@@ -32,8 +32,12 @@ defmodule StateFun do
         applyBatch(protoInvocationRequest.invocations, %{},  target_function_spec.function_callback)
 
         # TODO aggregate results
-        
-        {:reply, 200, state}
+        # collectmutation
+        # collectSideoutput
+        invocationResponse = %Io.Statefun.Sdk.Reqreply.FromFunction.InvocationResponse{}
+        fromFunc = %Io.Statefun.Sdk.Reqreply.FromFunction{response: {:invocation_result, invocationResponse}}
+        binary_resp = Io.Statefun.Sdk.Reqreply.FromFunction.encode(fromFunc)
+        {:reply, binary_resp, state}
     end
 
     def g() do
@@ -44,7 +48,7 @@ defmodule StateFun do
     defp applyBatch(pbInvocationRequest, context, func_cb) do
         pbInvocationRequest 
         |> Enum.map(fn invocation -> process_invocation_request(invocation, func_cb) end)
-        
+    
     end
 
     # 
