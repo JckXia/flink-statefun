@@ -23,6 +23,7 @@ defmodule StateFun do
 
     @impl True
     def handle_call({:async_invoke, raw_body}, _from, state) do 
+        IO.inspect("Received request from flink!")
         # IO.inspect("Received an requst from flink. #{inspect(raw_body)} ")
         toFn = Io.Statefun.Sdk.Reqreply.ToFunction.decode(raw_body).request
         {:invocation, protoInvocationRequest} = toFn
@@ -35,12 +36,15 @@ defmodule StateFun do
         stateReceivedFromFlink = StateFun.Address.AddressedScopedStorage.indexReceivedStateFromFlink(protoInvocationRequest.state)
 
         contextObject = StateFun.Context.init(funcAddress)
-        applyBatch(protoInvocationRequest.invocations, contextObject ,  target_function_spec.function_callback)
-
+        updatedContextObject =  applyBatch(protoInvocationRequest.invocations, contextObject, target_function_spec.function_callback)
+        
+        # IO.inspect("Updated conext object after invoking func #{inspect(updatedContextObject)}")
         # TODO aggregate results
         # collectmutation
         # collectSideoutput
         invocationResponse = %Io.Statefun.Sdk.Reqreply.FromFunction.InvocationResponse{}
+        invocationResponse = aggregate_sent_messages(invocationResponse, updatedContextObject.internalContext.sent)
+
         fromFunc = %Io.Statefun.Sdk.Reqreply.FromFunction{response: {:invocation_result, invocationResponse}}
         binary_resp = Io.Statefun.Sdk.Reqreply.FromFunction.encode(fromFunc)
         {:reply, binary_resp, state}
@@ -50,13 +54,43 @@ defmodule StateFun do
         addr = StateFun.Address.init("a", "t", "d")
         IO.inspect(addr.func_type)
     end
-
-    defp applyBatch(pbInvocationRequest, context, func_cb) do
-        pbInvocationRequest 
-        |> Enum.map(fn invocation -> process_invocation_request(invocation, context, func_cb) end)
+    
+    # Function to Function messages
+    defp aggregate_sent_messages(invocationResponse, sentMessages) do 
+        outGoingMsg = sentMessages
+        |> Enum.map(fn msg -> sent_msg_to_pb(msg) end)
+        invocationResponse =%Io.Statefun.Sdk.Reqreply.FromFunction.InvocationResponse{ invocationResponse | outgoing_messages: outGoingMsg }
+        invocationResponse
     end
 
-    # 
+
+    defp sent_msg_to_pb(sentMsg) do
+        sdkAddr = sentMsg.targetAddress
+        pbAddr = translate_sdk_func_addr_to_pb_addr(sdkAddr)
+
+        # TODO: At the moment pay load is hard-coded as an value. Might need to change this into serialziaton somehow
+        #   -> Hypothesis: Serialization/Deserialization should be the "user" program's responsibility.
+        pbArg = %Io.Statefun.Sdk.Reqreply.TypedValue{typename: "FIX_ME_TYPE_NAME", has_value: true, value: List.to_string(:io_lib.format("~8.2B", [sentMsg.payload]))}
+        %Io.Statefun.Sdk.Reqreply.FromFunction.Invocation{target: pbAddr, argument: pbArg}
+    end
+
+
+
+    defp applyBatch(pbInvocationRequest, context, func_cb) do
+        process_invoc_request(pbInvocationRequest, context, func_cb)
+    end
+
+    defp process_invoc_request([] = _invoc, context, func) do 
+        context
+    end
+
+    defp process_invoc_request([invocation | tail] = _invoc, context, func) do
+        arg = invocation.argument
+        message = %StateFun.Message{targetAddress: nil, payload: arg.value}
+        ctx = func.(context, message)
+        process_invoc_request(tail, ctx, func)
+    end
+    
     defp process_invocation_request(invocation, context, func) do
         arg = invocation.argument
         message = %StateFun.Message{targetAddress: nil, payload: arg.value}
@@ -65,7 +99,7 @@ defmodule StateFun do
     
     # TODO error handling (a bunch of different places really)
     defp get_function_spec(state, funcAddress) do 
-        IO.inspect("State #{inspect(state)}, func_type: #{inspect(funcAddress.func_type)}")
+        # IO.inspect("State #{inspect(state)}, func_type: #{inspect(funcAddress.func_type)}")
         state[funcAddress.func_type]
     end
 
@@ -74,8 +108,15 @@ defmodule StateFun do
         func_namespace = address.namespace
         func_type = address.type
         func_id  = address.id
-        IO.inspect("Received function #{func_namespace}, type: #{func_type}, id: #{func_id}")
+        # IO.inspect("Received function #{func_namespace}, type: #{func_type}, id: #{func_id}")
         StateFun.Address.init(func_namespace, func_type, func_id)
+    end
+
+    defp translate_sdk_func_addr_to_pb_addr(address) do
+       name_space = address.func_namespace
+       func_type = address.func_type
+       func_id = address.func_id
+       %Io.Statefun.Sdk.Reqreply.Address{namespace: name_space, type: func_type, id: func_id}
     end
 
     # TODO Error handling
@@ -83,10 +124,6 @@ defmodule StateFun do
     end
 
     # TODO refactor these into seperate files
-
- 
-
-
     defmodule EgressMessage do 
         defstruct [:typename, :payload]
          def init(typename, payload) do 
@@ -122,6 +159,7 @@ defmodule StateFun do
             IO.inspect("Dispatch egress messages!")
             context
         end 
+
 
         # TODO once we are confident simple send works
         def sendAfter(delay, message, cancellationToken) do end
