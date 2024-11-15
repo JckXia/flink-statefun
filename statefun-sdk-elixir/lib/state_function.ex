@@ -49,8 +49,9 @@ defmodule StateFun do
         target_function_spec = get_function_spec(state, funcAddress)
 
         stateReceivedFromFlink = StateFun.Address.AddressedScopedStorage.indexReceivedStateFromFlink(protoInvocationRequest.state)
+        storage = StateFun.Address.AddressedScopedStorage.extractKnownStateFromSpec(state, stateReceivedFromFlink)
 
-        contextObject = StateFun.Context.init(funcAddress)
+        contextObject = StateFun.Context.init(funcAddress, storage)
         updatedContextObject =  applyBatch(protoInvocationRequest.invocations, contextObject, target_function_spec.function_callback)
         
         # TODO aggregate results
@@ -143,8 +144,8 @@ defmodule StateFun do
         end 
      
         # Self is the Address of current function
-        def init(self) do
-            %Context{storage: %{}, self: self, internalContext: %InternalContext{}}
+        def init(self, storage) do
+            %Context{storage: storage, self: self, internalContext: %InternalContext{}}
         end
 
         def send(context, %StateFun.Message{} = msg) do        
@@ -165,15 +166,65 @@ defmodule StateFun do
         def cancelDelayedMessage(cancellationToken) do end
     end
  
-  
-    defmodule Address.AddressedScopedStorage do
-        # Shouold be an list
-        # TODO handle state updates
-        def indexReceivedStateFromFlink(protoState) do
-            IO.inspect("[SDK] Received state from #{inspect(protoState)}")
-            []
+     # An 3-uple object, tracks state information
+    #   -> on set, status mutates to MODIFIED
+    #   -> on remove, status mutates to DELETED
+    #   (Needed by Flink/StateFun runtime to know what to do with state)
+    defmodule Address.AddressedScopedStorage.Cell do 
+        defstruct [state_type: nil, state_value: nil, state_status: :UNMODIFIED]
+        def init(state_type) do
+            %Address.AddressedScopedStorage.Cell{state_type: state_type}
+        end
+
+        def set(cell, new_val) do
+            %Address.AddressedScopedStorage.Cell{ cell | state_value: new_val, state_status: :MODIFIED}
+        end
+
+        def get(cell) do
+            cell.state_value
+        end
+
+        def delete(cell) do
+            %Address.AddressedScopedStorage.Cell{ cell | state_value: nil, state_status: :DELETED}
         end
     end
+    
+    defmodule Address.AddressedScopedStorage do
+
+        # [Io.Statefun.Sdk.Reqreply.ToFunction.PersistedValue]
+        def indexReceivedStateFromFlink(stateFunStates) do
+            IO.inspect("[SDK] Received state from #{inspect(stateFunStates)}")
+            
+            stateFunStates
+            |> Enum.map(fn state -> {state.state_name, state.state_value} end)
+            |> Enum.into(%{})
+        end
+        
+        # TODO error handling + refactor, but assume happy path for now
+        def extractKnownStateFromSpec(functionSpec, stateReceivedFromFlink) do
+            storage_object = %{}
+            #Init storage object with known state spec name
+            storage_object = Enum.reduce(functionSpec, %{}, fn {func_name, func_spec}, acc -> 
+                if func_spec.state_value_specs != nil do
+                    cell = %Address.AddressedScopedStorage.Cell{state_type: func_spec.state_value_specs.type}
+                    # IO.inspect("State recv from flink #{inspect(stateReceivedFromFlink)}")
+                    if stateReceivedFromFlink[func_spec.state_value_specs.name] != nil do
+                      found_flink_state_typed_value = stateReceivedFromFlink[func_spec.state_value_specs.name]
+                      cell = %Address.AddressedScopedStorage.Cell{cell | state_type: found_flink_state_typed_value.typename,   state_value: found_flink_state_typed_value.value}
+                      Map.put(acc, func_spec.state_value_specs.name, cell)
+                    else 
+                      Map.put(acc, func_spec.state_value_specs.name, cell)
+                    end
+                else 
+                    acc
+                end
+            end)
+
+            storage_object
+        end
+    end
+
+ 
 
     defmodule Address do 
         defstruct [:func_namespace, :func_type, :func_id]
