@@ -16,15 +16,30 @@ defmodule StateFun do
     end
 
     defmodule Message do
-        defstruct [targetAddress: nil, payload: nil]
-          
+        defstruct [targetAddress: nil, payload: nil, typedValue: nil]
+        
+        # Method to parse message into an int
+        def as_int(message) do
+            packet = message.typedValue.value
+            Io.Statefun.Sdk.Types.IntWrapper.decode(packet).value
+        end
+
+        # Method to check whether message is an int
+        def is_int(message) do 
+            message.typedValue.typename == :sfixed32 or message.typedValue.typename == "sfixed32"  
+        end
+
+        def build_int(value) do
+            basic_int = %Io.Statefun.Sdk.Types.IntWrapper{value: value}
+            wrapper = Io.Statefun.Sdk.Types.IntWrapper.encode(basic_int)
+            %Io.Statefun.Sdk.Reqreply.TypedValue{typename: :sfixed32, has_value: true, value: wrapper}
+        end
     end
 
 
     @impl True
     def handle_call({:async_invoke, raw_body}, _from, state) do 
-        IO.inspect("Received request from flink!")
-        # IO.inspect("Received an requst from flink. #{inspect(raw_body)} ")
+        IO.inspect("[SDK] Received request from flink!")
         toFn = Io.Statefun.Sdk.Reqreply.ToFunction.decode(raw_body).request
         {:invocation, protoInvocationRequest} = toFn
 
@@ -38,10 +53,7 @@ defmodule StateFun do
         contextObject = StateFun.Context.init(funcAddress)
         updatedContextObject =  applyBatch(protoInvocationRequest.invocations, contextObject, target_function_spec.function_callback)
         
-        # IO.inspect("Updated conext object after invoking func #{inspect(updatedContextObject)}")
         # TODO aggregate results
-        # collectmutation
-        # collectSideoutput
         invocationResponse = %Io.Statefun.Sdk.Reqreply.FromFunction.InvocationResponse{}
         invocationResponse = aggregate_sent_messages(invocationResponse, updatedContextObject.internalContext.sent)
 
@@ -63,17 +75,13 @@ defmodule StateFun do
         invocationResponse
     end
 
-
     defp sent_msg_to_pb(sentMsg) do
         sdkAddr = sentMsg.targetAddress
         pbAddr = translate_sdk_func_addr_to_pb_addr(sdkAddr)
 
-        # TODO: At the moment pay load is hard-coded as an value. Might need to change this into serialziaton somehow
-        #   -> Hypothesis: Serialization/Deserialization should be the "user" program's responsibility.
-        pbArg = %Io.Statefun.Sdk.Reqreply.TypedValue{typename: "FIX_ME_TYPE_NAME", has_value: true, value: List.to_string(:io_lib.format("~8.2B", [sentMsg.payload]))}
+        pbArg = %Io.Statefun.Sdk.Reqreply.TypedValue{typename: to_string(sentMsg.typedValue.typename) , has_value: true, value: sentMsg.typedValue.value }
         %Io.Statefun.Sdk.Reqreply.FromFunction.Invocation{target: pbAddr, argument: pbArg}
     end
-
 
 
     defp applyBatch(pbInvocationRequest, context, func_cb) do
@@ -86,15 +94,9 @@ defmodule StateFun do
 
     defp process_invoc_request([invocation | tail] = _invoc, context, func) do
         arg = invocation.argument
-        message = %StateFun.Message{targetAddress: nil, payload: arg.value}
+        message = %StateFun.Message{targetAddress: nil, payload: arg.value, typedValue: arg}
         ctx = func.(context, message)
         process_invoc_request(tail, ctx, func)
-    end
-    
-    defp process_invocation_request(invocation, context, func) do
-        arg = invocation.argument
-        message = %StateFun.Message{targetAddress: nil, payload: arg.value}
-        func.(context, message)
     end
     
     # TODO error handling (a bunch of different places really)
@@ -140,15 +142,12 @@ defmodule StateFun do
             defstruct [caller: nil, sent: [], egress: [], delayed: []]
         end 
      
-
         # Self is the Address of current function
         def init(self) do
             %Context{storage: %{}, self: self, internalContext: %InternalContext{}}
         end
 
-        def send(context, %StateFun.Message{} = msg) do 
-            IO.inspect("Dispatching general messages") 
-            
+        def send(context, %StateFun.Message{} = msg) do        
             updatedSent = [msg] ++ context.internalContext.sent
             internalContext = %InternalContext{context.internalContext | sent: updatedSent}
     
@@ -171,7 +170,7 @@ defmodule StateFun do
         # Shouold be an list
         # TODO handle state updates
         def indexReceivedStateFromFlink(protoState) do
-            IO.inspect("Received state from #{inspect(protoState)}")
+            IO.inspect("[SDK] Received state from #{inspect(protoState)}")
             []
         end
     end
