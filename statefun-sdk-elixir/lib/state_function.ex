@@ -32,14 +32,13 @@ defmodule StateFun do
         def build_int(value) do
             basic_int = %Io.Statefun.Sdk.Types.IntWrapper{value: value}
             wrapper = Io.Statefun.Sdk.Types.IntWrapper.encode(basic_int)
-            %Io.Statefun.Sdk.Reqreply.TypedValue{typename: :sfixed32, has_value: true, value: wrapper}
+            %Io.Statefun.Sdk.Reqreply.TypedValue{typename: "sfixed32", has_value: true, value: wrapper}
         end
     end
 
 
     @impl True
     def handle_call({:async_invoke, raw_body}, _from, state) do 
-        IO.inspect("[SDK] Received request from flink!")
         toFn = Io.Statefun.Sdk.Reqreply.ToFunction.decode(raw_body).request
         {:invocation, protoInvocationRequest} = toFn
 
@@ -49,14 +48,15 @@ defmodule StateFun do
         target_function_spec = get_function_spec(state, funcAddress)
 
         stateReceivedFromFlink = StateFun.Address.AddressedScopedStorage.indexReceivedStateFromFlink(protoInvocationRequest.state)
-        storage = StateFun.Address.AddressedScopedStorage.extractKnownStateFromSpec(state, stateReceivedFromFlink)
+        storage = StateFun.Address.AddressedScopedStorage.extractKnownStateFromSpec(funcAddress, state, stateReceivedFromFlink)
 
         contextObject = StateFun.Context.init(funcAddress, storage)
         updatedContextObject =  applyBatch(protoInvocationRequest.invocations, contextObject, target_function_spec.function_callback)
-        
+
         # TODO aggregate results
         invocationResponse = %Io.Statefun.Sdk.Reqreply.FromFunction.InvocationResponse{}
         invocationResponse = aggregate_sent_messages(invocationResponse, updatedContextObject.internalContext.sent)
+        invocationResponse = aggregate_state_mutations(invocationResponse, updatedContextObject.storage)
 
         fromFunc = %Io.Statefun.Sdk.Reqreply.FromFunction{response: {:invocation_result, invocationResponse}}
         binary_resp = Io.Statefun.Sdk.Reqreply.FromFunction.encode(fromFunc)
@@ -68,6 +68,22 @@ defmodule StateFun do
         IO.inspect(addr.func_type)
     end
     
+
+    # Pseudo-code:
+    #   -> For each item in storage, if :MODIFIED
+    #       -> create PersistedValueMutation object
+    #           -> state_name: string
+    #           -> state_value: cell.state_value
+    defp aggregate_state_mutations(invocationResponse, storage) do  
+        mutation_list = Enum.filter(storage, fn {_state_name, state_cell} -> state_cell.state_status == :MODIFIED end)  
+                    |> Enum.map(fn {state_name, state_cell} ->  
+                                    %Io.Statefun.Sdk.Reqreply.FromFunction.PersistedValueMutation{mutation_type: :MODIFY, state_name: to_string(state_name), state_value: state_cell.state_value}
+                    end)
+        
+        #  %Io.Statefun.Sdk.Reqreply.FromFunction.InvocationResponse{invocationResponse | state_mutations: mutation_list}
+        invocationResponse
+    end
+
     # Function to Function messages
     defp aggregate_sent_messages(invocationResponse, sentMessages) do 
         outGoingMsg = sentMessages
@@ -201,11 +217,27 @@ defmodule StateFun do
         end
         
         # TODO error handling + refactor, but assume happy path for now
-        def extractKnownStateFromSpec(functionSpec, stateReceivedFromFlink) do
+        def extractKnownStateFromSpec(funcAddress, functionSpec, stateReceivedFromFlink) do
             storage_object = %{}
+            
+            # Generate a list of value specs that user have defined, but flink does not know about
+            #  -> When this happens, need to 
+
+            missing = Enum.filter(functionSpec, fn {_spec, func_spec} -> func_spec.state_value_specs != nil end) 
+                    |>  Enum.reduce(%{}, fn {func_name, func_spec}, acc -> 
+                              state_value_spec = func_spec.state_value_specs
+                      
+                              if state_value_spec != nil and stateReceivedFromFlink[state_value_spec.name] == nil do
+                                IO.inspect("State value spec #{inspect(state_value_spec)} is missing!")
+                                Map.put(acc, state_value_spec.name, state_value_spec)
+                              end
+                        end)
+        
+            IO.inspect("We are missing valueSpecs ack from Flink #{inspect(missing)}")
+
             #Init storage object with known state spec name
             storage_object = Enum.reduce(functionSpec, %{}, fn {func_name, func_spec}, acc -> 
-                if func_spec.state_value_specs != nil do
+                if func_spec.state_value_specs != nil and funcAddress.func_type == func_spec.type_name do
                     cell = %Address.AddressedScopedStorage.Cell{state_type: func_spec.state_value_specs.type}
                     # IO.inspect("State recv from flink #{inspect(stateReceivedFromFlink)}")
                     if stateReceivedFromFlink[func_spec.state_value_specs.name] != nil do
@@ -233,6 +265,7 @@ defmodule StateFun do
         end
     end
 
+    # TODO make state_value_specs a list, not just an attribute
     defmodule FunctionSpecs do
         defstruct [:type_name, :function_callback, :state_value_specs]
     end 
