@@ -24,6 +24,10 @@ defmodule StateFun do
             Io.Statefun.Sdk.Types.IntWrapper.decode(packet).value
         end
 
+        def typed_val_as_int(typedVal) do 
+            Io.Statefun.Sdk.Types.IntWrapper.decode(typedVal).value
+        end
+
         # Method to check whether message is an int
         def is_int(message) do 
             message.typedValue.typename == :sfixed32 or message.typedValue.typename == "sfixed32"  
@@ -34,20 +38,48 @@ defmodule StateFun do
             wrapper = Io.Statefun.Sdk.Types.IntWrapper.encode(basic_int)
             %Io.Statefun.Sdk.Reqreply.TypedValue{typename: "sfixed32", has_value: true, value: wrapper}
         end
-    end
 
+        # TODO, reconcile these two. Type is a bit messsed up at the moment 
+        def build_int_state(value) do
+            basic_int = %Io.Statefun.Sdk.Types.IntWrapper{value: value}
+            wrapper = Io.Statefun.Sdk.Types.IntWrapper.encode(basic_int)
+            %Io.Statefun.Sdk.Reqreply.TypedValue{typename: "io.statefun.types/int", has_value: true, value: wrapper}
+        end
+    end
 
     @impl True
     def handle_call({:async_invoke, raw_body}, _from, state) do 
         toFn = Io.Statefun.Sdk.Reqreply.ToFunction.decode(raw_body).request
         {:invocation, protoInvocationRequest} = toFn
 
+        stateReceivedFromFlink = StateFun.indexReceivedStateFromFlink(protoInvocationRequest.state)
+        missing_value_specs = StateFun.find_missing_value_specs(state, stateReceivedFromFlink)
+        binary_resp = process_invocation_request(missing_value_specs, protoInvocationRequest, state, stateReceivedFromFlink)
+        {:reply, binary_resp, state}
+    end
+    
+    defp process_invocation_request(missing_value_specs, protoInvocationRequest, state, stateReceivedFromFlink) when map_size(missing_value_specs) != 0 do 
+        IO.inspect("[SDK] Some stateValue specs are missing #{inspect(missing_value_specs)}")
+        
+        missing_values = missing_value_specs 
+            |> Enum.map(fn {state_name, state_value_spec} -> 
+            %Io.Statefun.Sdk.Reqreply.FromFunction.PersistedValueSpec{state_name: state_name, 
+            expiration_spec: nil,
+            type_typename: state_value_spec.type}
+        end)
+
+        invocationResponse = %Io.Statefun.Sdk.Reqreply.FromFunction.IncompleteInvocationContext{missing_values: missing_values}
+
+        fromFunc = %Io.Statefun.Sdk.Reqreply.FromFunction{response: {:incomplete_invocation_context, invocationResponse}}
+        Io.Statefun.Sdk.Reqreply.FromFunction.encode(fromFunc)
+    end
+
+    defp process_invocation_request(missing_value_specs, protoInvocationRequest, state, stateReceivedFromFlink) do 
         protoFuncAddr = protoInvocationRequest.target
 
         funcAddress = translate_protobuf_to_sdk_func_addr(protoFuncAddr)
         target_function_spec = get_function_spec(state, funcAddress)
-
-        stateReceivedFromFlink = StateFun.Address.AddressedScopedStorage.indexReceivedStateFromFlink(protoInvocationRequest.state)
+        
         storage = StateFun.Address.AddressedScopedStorage.extractKnownStateFromSpec(funcAddress, state, stateReceivedFromFlink)
 
         contextObject = StateFun.Context.init(funcAddress, storage)
@@ -59,9 +91,9 @@ defmodule StateFun do
         invocationResponse = aggregate_state_mutations(invocationResponse, updatedContextObject.storage)
 
         fromFunc = %Io.Statefun.Sdk.Reqreply.FromFunction{response: {:invocation_result, invocationResponse}}
-        binary_resp = Io.Statefun.Sdk.Reqreply.FromFunction.encode(fromFunc)
-        {:reply, binary_resp, state}
+        Io.Statefun.Sdk.Reqreply.FromFunction.encode(fromFunc)
     end
+
 
     def g() do
         addr = StateFun.Address.init("a", "t", "d")
@@ -80,8 +112,8 @@ defmodule StateFun do
                                     %Io.Statefun.Sdk.Reqreply.FromFunction.PersistedValueMutation{mutation_type: :MODIFY, state_name: to_string(state_name), state_value: state_cell.state_value}
                     end)
         
-        #  %Io.Statefun.Sdk.Reqreply.FromFunction.InvocationResponse{invocationResponse | state_mutations: mutation_list}
-        invocationResponse
+        # IO.inspect("[SDK] Mutation modification list after invocation #{inspect(mutation_list)}")
+        %Io.Statefun.Sdk.Reqreply.FromFunction.InvocationResponse{invocationResponse | state_mutations: mutation_list}
     end
 
     # Function to Function messages
@@ -99,6 +131,35 @@ defmodule StateFun do
         pbArg = %Io.Statefun.Sdk.Reqreply.TypedValue{typename: to_string(sentMsg.typedValue.typename) , has_value: true, value: sentMsg.typedValue.value }
         %Io.Statefun.Sdk.Reqreply.FromFunction.Invocation{target: pbAddr, argument: pbArg}
     end
+
+     def indexReceivedStateFromFlink(stateFunStates) do
+            IO.inspect("[SDK] Received state from #{inspect(stateFunStates)}")
+                    
+            stateFunStates
+            |> Enum.map(fn state -> {state.state_name, state.state_value} end)
+            |> Enum.into(%{})
+    end
+
+    # stateReceived is a flipping map, because we formatted it using 134 
+    def find_missing_value_specs(functionSpec, stateReceivedFromFlink) do 
+        missing = Enum.filter(functionSpec, fn {_spec, func_spec} -> func_spec.state_value_specs != nil end) 
+                |>  Enum.reduce(%{}, fn {func_name, func_spec}, acc -> 
+                        state_value_spec = func_spec.state_value_specs
+                        if value_spec_found?(state_value_spec.name, stateReceivedFromFlink) == false do
+                            Map.put(acc, state_value_spec.name, state_value_spec)
+                        end 
+                end)
+        missing
+    end
+
+    defp value_spec_found?(state_name, stateMap) when map_size(stateMap) == 0  do 
+        false
+    end
+
+    defp value_spec_found?(state_name, stateReceivedFromFlink) do 
+        Map.has_key?(stateReceivedFromFlink, state_name)
+    end
+
 
 
     defp applyBatch(pbInvocationRequest, context, func_cb) do
@@ -210,10 +271,24 @@ defmodule StateFun do
         # [Io.Statefun.Sdk.Reqreply.ToFunction.PersistedValue]
         def indexReceivedStateFromFlink(stateFunStates) do
             IO.inspect("[SDK] Received state from #{inspect(stateFunStates)}")
-            
+                    
             stateFunStates
             |> Enum.map(fn state -> {state.state_name, state.state_value} end)
             |> Enum.into(%{})
+        end
+
+        def find_missing_value_specs(functionSpec, stateReceivedFromFlink) do 
+            
+            missing = Enum.filter(functionSpec, fn {_spec, func_spec} -> func_spec.state_value_specs != nil end) 
+                    |>  Enum.reduce(%{}, fn {func_name, func_spec}, acc -> 
+                            state_value_spec = func_spec.state_value_specs
+                            if stateReceivedFromFlink[state_value_spec.name] == nil do
+                                Map.put(acc, state_value_spec.name, state_value_spec)
+                            end  
+
+                        end)     
+            IO.inspect("We are missing valueSpecs ack from Flink #{inspect(missing)}")
+            missing
         end
         
         # TODO error handling + refactor, but assume happy path for now
@@ -222,19 +297,6 @@ defmodule StateFun do
             
             # Generate a list of value specs that user have defined, but flink does not know about
             #  -> When this happens, need to 
-
-            missing = Enum.filter(functionSpec, fn {_spec, func_spec} -> func_spec.state_value_specs != nil end) 
-                    |>  Enum.reduce(%{}, fn {func_name, func_spec}, acc -> 
-                              state_value_spec = func_spec.state_value_specs
-                      
-                              if state_value_spec != nil and stateReceivedFromFlink[state_value_spec.name] == nil do
-                                IO.inspect("State value spec #{inspect(state_value_spec)} is missing!")
-                                Map.put(acc, state_value_spec.name, state_value_spec)
-                              end
-                        end)
-        
-            IO.inspect("We are missing valueSpecs ack from Flink #{inspect(missing)}")
-
             #Init storage object with known state spec name
             storage_object = Enum.reduce(functionSpec, %{}, fn {func_name, func_spec}, acc -> 
                 if func_spec.state_value_specs != nil and funcAddress.func_type == func_spec.type_name do
