@@ -85,21 +85,15 @@ defmodule StateFun do
         contextObject = StateFun.Context.init(funcAddress, storage)
         updatedContextObject =  applyBatch(protoInvocationRequest.invocations, contextObject, target_function_spec.function_callback)
 
-        # TODO aggregate results
         invocationResponse = %Io.Statefun.Sdk.Reqreply.FromFunction.InvocationResponse{}
-        invocationResponse = aggregate_sent_messages(invocationResponse, updatedContextObject.internalContext.sent)
-        invocationResponse = aggregate_state_mutations(invocationResponse, updatedContextObject.storage)
+
+        invocationResponse = invocationResponse 
+                            |> aggregate_sent_messages(updatedContextObject.internalContext.sent)
+                            |> aggregate_state_mutations(updatedContextObject.storage)
 
         fromFunc = %Io.Statefun.Sdk.Reqreply.FromFunction{response: {:invocation_result, invocationResponse}}
         Io.Statefun.Sdk.Reqreply.FromFunction.encode(fromFunc)
     end
-
-
-    def g() do
-        addr = StateFun.Address.init("a", "t", "d")
-        IO.inspect(addr.func_type)
-    end
-    
 
     # Pseudo-code:
     #   -> For each item in storage, if :MODIFIED
