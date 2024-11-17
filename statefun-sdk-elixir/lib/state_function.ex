@@ -1,6 +1,7 @@
 defmodule StateFun do  
     use GenServer
 
+    @state_fun_int_type "io.statefun.types/int"
 
     @impl true
     def init(function_specs) do
@@ -15,35 +16,47 @@ defmodule StateFun do
         {function_spec.type_name, function_spec}
     end
 
-    defmodule Message do
-        defstruct [targetAddress: nil, payload: nil, typedValue: nil]
+    def get_int_type() do
+      @state_fun_int_type
+    end
+
+
+    defmodule TypedValue do 
+        defstruct [typedname: nil, has_value: false, value: nil]
         
-        # Method to parse message into an int
-        def as_int(message) do
-            packet = message.typedValue.value
-            Io.Statefun.Sdk.Types.IntWrapper.decode(packet).value
+        def is_int(typedvalue) do 
+            typedvalue.typename == StateFun.get_int_type()
         end
 
-        def typed_val_as_int(typedVal) do 
+        def raw_val_as_int(typedVal) do
             Io.Statefun.Sdk.Types.IntWrapper.decode(typedVal).value
         end
 
-        # Method to check whether message is an int
-        def is_int(message) do 
-            message.typedValue.typename == :sfixed32 or message.typedValue.typename == "sfixed32"  
+        def as_int(typedvalue) do
+            Io.Statefun.Sdk.Types.IntWrapper.decode(typedvalue.value)
         end
 
-        def build_int(value) do
-            basic_int = %Io.Statefun.Sdk.Types.IntWrapper{value: value}
+        def from_int(int_val) do
+            basic_int = %Io.Statefun.Sdk.Types.IntWrapper{value: int_val}
             wrapper = Io.Statefun.Sdk.Types.IntWrapper.encode(basic_int)
-            %Io.Statefun.Sdk.Reqreply.TypedValue{typename: "sfixed32", has_value: true, value: wrapper}
+            %Io.Statefun.Sdk.Reqreply.TypedValue{typename: StateFun.get_int_type(), has_value: true, value: wrapper}
+        end
+    end
+
+    defmodule Message do
+        defstruct [targetAddress: nil, payload: nil, typedValue: nil]
+        
+        def as_int_msg(message) do
+            TypedValue.as_int(message.typedValue).value
         end
 
-        # TODO, reconcile these two. Type is a bit messsed up at the moment 
-        def build_int_state(value) do
-            basic_int = %Io.Statefun.Sdk.Types.IntWrapper{value: value}
-            wrapper = Io.Statefun.Sdk.Types.IntWrapper.encode(basic_int)
-            %Io.Statefun.Sdk.Reqreply.TypedValue{typename: "io.statefun.types/int", has_value: true, value: wrapper}
+        def build_int_msg(targetAddr, int_val) do 
+            encoded_payload = TypedValue.from_int(int_val)
+            %StateFun.Message{targetAddress: targetAddr, payload: 34, typedValue: encoded_payload}
+        end
+
+        def is_int_msg(message) do 
+            TypedValue.is_int(message.typedValue)
         end
     end
 
