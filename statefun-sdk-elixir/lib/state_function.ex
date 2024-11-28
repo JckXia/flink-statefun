@@ -42,7 +42,7 @@ defmodule StateFun do
     end
 
     defmodule Message do
-        defstruct [targetAddress: nil, payload: nil, typedValue: nil]
+        defstruct [targetAddress: nil, typedValue: nil]
         
         def as_int_msg(message) do
             TypedValue.as_int(message.typedValue)
@@ -50,7 +50,7 @@ defmodule StateFun do
 
         def build_int_msg(targetAddr, int_val) do 
             encoded_payload = TypedValue.from_int(int_val)
-            %StateFun.Message{targetAddress: targetAddr, payload: 34, typedValue: encoded_payload}
+            %StateFun.Message{targetAddress: targetAddr, typedValue: encoded_payload}
         end
 
         def is_int_msg(message) do 
@@ -174,7 +174,7 @@ defmodule StateFun do
 
     defp process_invoc_request([invocation | tail] = _invoc, context, func) do
         arg = invocation.argument
-        message = %StateFun.Message{targetAddress: nil, payload: arg.value, typedValue: arg}
+        message = %StateFun.Message{targetAddress: nil, typedValue: arg}
         ctx = func.(context, message)
         process_invoc_request(tail, ctx, func)
     end
