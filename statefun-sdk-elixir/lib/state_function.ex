@@ -28,12 +28,10 @@ defmodule StateFun do
             typedvalue.typename == StateFun.get_int_type()
         end
 
-        def raw_val_as_int(typedVal) do
-            Io.Statefun.Sdk.Types.IntWrapper.decode(typedVal).value
-        end
-
+        # Convert a TypedValue object into the actual state it represents
+        #   (In this case int)
         def as_int(typedvalue) do
-            Io.Statefun.Sdk.Types.IntWrapper.decode(typedvalue.value)
+            Io.Statefun.Sdk.Types.IntWrapper.decode(typedvalue.value).value
         end
 
         def from_int(int_val) do
@@ -47,7 +45,7 @@ defmodule StateFun do
         defstruct [targetAddress: nil, payload: nil, typedValue: nil]
         
         def as_int_msg(message) do
-            TypedValue.as_int(message.typedValue).value
+            TypedValue.as_int(message.typedValue)
         end
 
         def build_int_msg(targetAddr, int_val) do 
@@ -119,7 +117,6 @@ defmodule StateFun do
                                     %Io.Statefun.Sdk.Reqreply.FromFunction.PersistedValueMutation{mutation_type: :MODIFY, state_name: to_string(state_name), state_value: state_cell.state_value}
                     end)
         
-        # IO.inspect("[SDK] Mutation modification list after invocation #{inspect(mutation_list)}")
         %Io.Statefun.Sdk.Reqreply.FromFunction.InvocationResponse{invocationResponse | state_mutations: mutation_list}
     end
 
@@ -140,7 +137,7 @@ defmodule StateFun do
     end
 
      def indexReceivedStateFromFlink(stateFunStates) do
-            IO.inspect("[SDK] Received state from #{inspect(stateFunStates)}")
+            # IO.inspect("[SDK] Received state from #{inspect(stateFunStates)}")
                     
             stateFunStates
             |> Enum.map(fn state -> {state.state_name, state.state_value} end)
@@ -167,8 +164,6 @@ defmodule StateFun do
         Map.has_key?(stateReceivedFromFlink, state_name)
     end
 
-
-
     defp applyBatch(pbInvocationRequest, context, func_cb) do
         process_invoc_request(pbInvocationRequest, context, func_cb)
     end
@@ -186,7 +181,6 @@ defmodule StateFun do
     
     # TODO error handling (a bunch of different places really)
     defp get_function_spec(state, funcAddress) do 
-        # IO.inspect("State #{inspect(state)}, func_type: #{inspect(funcAddress.func_type)}")
         state[funcAddress.func_type]
     end
 
@@ -195,7 +189,7 @@ defmodule StateFun do
         func_namespace = address.namespace
         func_type = address.type
         func_id  = address.id
-        # IO.inspect("Received function #{func_namespace}, type: #{func_type}, id: #{func_id}")
+  
         StateFun.Address.init(func_namespace, func_type, func_id)
     end
 
@@ -311,7 +305,7 @@ defmodule StateFun do
                     # IO.inspect("State recv from flink #{inspect(stateReceivedFromFlink)}")
                     if stateReceivedFromFlink[func_spec.state_value_specs.name] != nil do
                       found_flink_state_typed_value = stateReceivedFromFlink[func_spec.state_value_specs.name]
-                      cell = %Address.AddressedScopedStorage.Cell{cell | state_type: found_flink_state_typed_value.typename,   state_value: found_flink_state_typed_value.value}
+                      cell = %Address.AddressedScopedStorage.Cell{cell | state_type: found_flink_state_typed_value.typename,   state_value: found_flink_state_typed_value}
                       Map.put(acc, func_spec.state_value_specs.name, cell)
                     else 
                       Map.put(acc, func_spec.state_value_specs.name, cell)
