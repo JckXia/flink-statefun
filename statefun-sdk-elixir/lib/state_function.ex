@@ -20,7 +20,7 @@ defmodule StateFun do
       @state_fun_int_type
     end
 
-
+    
     defmodule TypedValue do 
         defstruct [typedname: nil, has_value: false, value: nil]
         
@@ -109,8 +109,8 @@ defmodule StateFun do
     #       -> create PersistedValueMutation object
     #           -> state_name: string
     #           -> state_value: cell.state_value
-    defp aggregate_state_mutations(invocationResponse, storage) do  
-        mutation_list = Enum.filter(storage, fn {_state_name, state_cell} -> state_cell.state_status == :MODIFIED end)  
+    defp aggregate_state_mutations(invocationResponse, storage) do 
+        mutation_list = Enum.filter(storage.cells, fn {_state_name, state_cell} -> state_cell.state_status == :MODIFIED end)  
                     |> Enum.map(fn {state_name, state_cell} ->  
                                     %Io.Statefun.Sdk.Reqreply.FromFunction.PersistedValueMutation{mutation_type: :MODIFY, state_name: to_string(state_name), state_value: state_cell.state_value}
                     end)
@@ -270,8 +270,8 @@ defmodule StateFun do
             extract_deserialized_value(deserialized_val)
         end
 
-        def set_internal(cell, value) do
-            new_typed_val = serialize(cell.state_value.typename, value)
+        def set_internal(cell, valueSpec, value) do
+            new_typed_val = serialize(valueSpec.type, value)
             %Address.AddressedScopedStorage.Cell{ cell | state_value: new_typed_val, state_status: :MODIFIED}
         end
 
@@ -310,7 +310,7 @@ defmodule StateFun do
         # ValueSpec<T>, T
         def set(storage, valueSpec, value) do           
             new_cell = get_target_cell(storage, valueSpec)
-                        |> Address.AddressedScopedStorage.Cell.set_internal(value)
+                        |> Address.AddressedScopedStorage.Cell.set_internal(valueSpec, value)
                     
             updated_cells = Map.put(storage.cells, valueSpec.name, new_cell)
             %{storage | cells: updated_cells }    
@@ -319,23 +319,20 @@ defmodule StateFun do
         def remove(storage, valueSpec) do
             storage
         end
-
+        
+        # TODO, err handling?
         defp get_target_cell(storage, valueSpec) do
             storage.cells[valueSpec.name]
         end
 
-        def get_cells(funcAddress, functionSpec, stateReceivedFromFlink) do 
-            cells = extractKnownStateFromSpec(funcAddress, functionSpec, stateReceivedFromFlink)
-            %__MODULE__{cells: cells}
-        end
         # Construct an AddressScoped storage object from state given by Flink
         def extractKnownStateFromSpec(funcAddress, functionSpec, stateReceivedFromFlink) do
-            storage_object = %{}
+            cells = %{}
             
             # Generate a list of value specs that user have defined, but flink does not know about
             #  -> When this happens, need to 
             #Init storage object with known state spec name
-            storage_object = Enum.reduce(functionSpec, %{}, fn {func_name, func_spec}, acc -> 
+            cells = Enum.reduce(functionSpec, %{}, fn {func_name, func_spec}, acc -> 
                 if func_spec.state_value_specs != nil and funcAddress.func_type == func_spec.type_name do
                     cell = %Address.AddressedScopedStorage.Cell{state_type: func_spec.state_value_specs.type}
                     # IO.inspect("State recv from flink #{inspect(stateReceivedFromFlink)}")
@@ -351,7 +348,7 @@ defmodule StateFun do
                 end
             end)
 
-            storage_object
+            %__MODULE__{cells: cells}
         end
     end
 
