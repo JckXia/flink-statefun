@@ -89,8 +89,7 @@ defmodule StateFun do
         funcAddress = translate_protobuf_to_sdk_func_addr(protoFuncAddr)
         target_function_spec = get_function_spec(state, funcAddress)
         
-        storage = StateFun.Address.AddressedScopedStorage.extractKnownStateFromSpec(funcAddress, state, stateReceivedFromFlink)
-
+        storage = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(funcAddress, state, stateReceivedFromFlink)
         contextObject = StateFun.Context.init(funcAddress, storage)
         updatedContextObject =  applyBatch(protoInvocationRequest.invocations, contextObject, target_function_spec.function_callback)
 
@@ -332,31 +331,30 @@ defmodule StateFun do
             storage.cells[valueSpec.name]
         end
 
-        # Construct an AddressScoped storage object from state given by Flink
-        def extractKnownStateFromSpec(funcAddress, functionSpec, stateReceivedFromFlink) do
-            cells = %{}
-            
-            # Generate a list of value specs that user have defined, but flink does not know about
-            #  -> When this happens, need to 
-            #Init storage object with known state spec name
-            cells = Enum.reduce(functionSpec, %{}, fn {func_name, func_spec}, acc -> 
-                if func_spec.state_value_specs != nil and funcAddress.func_type == func_spec.type_name do
-                    cell = %Address.AddressedScopedStorage.Cell{state_type: func_spec.state_value_specs.type}
-                    # IO.inspect("State recv from flink #{inspect(stateReceivedFromFlink)}")
-                    if stateReceivedFromFlink[func_spec.state_value_specs.name] != nil do
-                      found_flink_state_typed_value = stateReceivedFromFlink[func_spec.state_value_specs.name]
-                      cell = %Address.AddressedScopedStorage.Cell{cell | state_type: found_flink_state_typed_value.typename,   state_value: found_flink_state_typed_value}
-                      Map.put(acc, func_spec.state_value_specs.name, cell)
-                    else 
-                      Map.put(acc, func_spec.state_value_specs.name, cell)
-                    end
-                else 
-                    acc
-                end
-            end)
-
-            %__MODULE__{cells: cells}
+  
+        def convertFlinkStateIntoFunctionScopedStorage(funcAddress, functionSpec, stateReceivedFromFlink) do
+            functionSpec[funcAddress.func_type]
+            |> generate_cells_from_function_spec(stateReceivedFromFlink)
         end
+
+        defp generate_cells_from_function_spec(target_function_spec, stateReceivedFromFlink) when target_function_spec.state_value_specs  == nil do
+            %__MODULE__{cells: %{}}
+        end
+        
+        defp generate_cells_from_function_spec(target_function_spec, stateReceivedFromFlink) do
+            cells = %{}
+
+            # TODO make this a list
+            state_value_spec = target_function_spec.state_value_specs
+            state_name = state_value_spec.name
+
+            state_val_supplied_by_flink = stateReceivedFromFlink[state_name]
+            
+            cell = %Address.AddressedScopedStorage.Cell{state_value: state_val_supplied_by_flink}
+            cells =  Map.put(cells, state_value_spec.name, cell)
+            %__MODULE__{cells: cells}
+        end 
+    
     end
 
  

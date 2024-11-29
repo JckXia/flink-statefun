@@ -2,6 +2,23 @@
 #   -> extractKnownStateFromSpec
 #   -> find_missing_value_specs
 
+# Brain storm:
+#   -> Current Data-structure/relationships:
+#       -> 1 FunctionSpec mapped to (at most) 1 state ValueSpec
+#       -> find_missing_value_specs(func_state, flink_state) semantics:, O(n), where n is number of funcSpecs (implicity valueSpec)
+#           -> flink give us all the state it knows about
+#           -> our funcState provides an global "func_spec_name" => state_spec mapping
+#           -> Current solution iterates over funcState to find value state... (This is alright)
+#      -> extractKnownStateFromSpec(funcAddress, functionSpec, flinkStateValState)
+#           -> an functionAddress (funcType)
+#           -> global functionSpec
+#           -> flinkState (key'd by state_name)  
+#
+#  -> Change Delta:
+#   -> refactor extractKnownStateFromSpec logic a bit:
+#       -> we known funcAddress.func_type is the "key" here. Just perform an lookup for this given function
+#       -> Data access pattern:
+#           -> 
 defmodule StateFuncStorageTest do
     use ExUnit.Case
     alias StateFun
@@ -32,10 +49,11 @@ defmodule StateFuncStorageTest do
         assert missing_specs == nil
     end
 
-    test "should extract known state from specs (for stateful funcs)" do
+    test "d should extract known state from specs (for stateful funcs)" do
         {:ok, init_state} = StateFun.init([@func_spec_stateless, @func_spec_stateful])
         func_addr = StateFun.Address.init("com.test", "func_stateful", "1")
-        storage_object = StateFun.Address.AddressedScopedStorage.extractKnownStateFromSpec(func_addr, init_state, %{"counter" => @typed_value})
+        storage_object = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(func_addr, init_state, %{"counter" => @typed_value})
+
         assert storage_object != nil
         assert map_size(storage_object.cells) == 1
         assert storage_object.cells["counter"].state_status == :UNMODIFIED
