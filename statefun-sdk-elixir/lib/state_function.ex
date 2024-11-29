@@ -20,7 +20,7 @@ defmodule StateFun do
       @state_fun_int_type
     end
 
-    
+
     defmodule TypedValue do 
         defstruct [typedname: nil, has_value: false, value: nil]
         
@@ -110,9 +110,9 @@ defmodule StateFun do
     #           -> state_name: string
     #           -> state_value: cell.state_value
     defp aggregate_state_mutations(invocationResponse, storage) do 
-        mutation_list = Enum.filter(storage.cells, fn {_state_name, state_cell} -> state_cell.state_status == :MODIFIED end)  
+        mutation_list = Enum.filter(storage.cells, fn {_state_name, state_cell} -> (state_cell.state_status == :MODIFY or state_cell.state_status == :DELETE) end)  
                     |> Enum.map(fn {state_name, state_cell} ->  
-                                    %Io.Statefun.Sdk.Reqreply.FromFunction.PersistedValueMutation{mutation_type: :MODIFY, state_name: to_string(state_name), state_value: state_cell.state_value}
+                                    %Io.Statefun.Sdk.Reqreply.FromFunction.PersistedValueMutation{mutation_type: state_cell.state_status, state_name: to_string(state_name), state_value: state_cell.state_value}
                     end)
         
         %Io.Statefun.Sdk.Reqreply.FromFunction.InvocationResponse{invocationResponse | state_mutations: mutation_list}
@@ -261,7 +261,7 @@ defmodule StateFun do
 
         # TODO add support for delete
         def delete(cell) do
-            %Address.AddressedScopedStorage.Cell{ cell | state_value: nil, state_status: :DELETED}
+            %Address.AddressedScopedStorage.Cell{ cell | state_value: nil, state_status: :DELETE}
         end
 
         # TODO replace the other function later on
@@ -272,7 +272,11 @@ defmodule StateFun do
 
         def set_internal(cell, valueSpec, value) do
             new_typed_val = serialize(valueSpec.type, value)
-            %Address.AddressedScopedStorage.Cell{ cell | state_value: new_typed_val, state_status: :MODIFIED}
+            %Address.AddressedScopedStorage.Cell{ cell | state_value: new_typed_val, state_status: :MODIFY}
+        end
+
+        def delete_internal(cell) do
+            %Address.AddressedScopedStorage.Cell{ cell | state_value: nil, state_status: :DELETE}
         end
 
         defp serialize(typename, value) when typename == "io.statefun.types/int" do
@@ -317,7 +321,10 @@ defmodule StateFun do
         end
 
         def remove(storage, valueSpec) do
-            storage
+            deleted_cell = get_target_cell(storage, valueSpec)
+                            |> Address.AddressedScopedStorage.Cell.delete_internal()
+            updated_cells = Map.put(storage.cells, valueSpec.name, deleted_cell)
+            %{storage | cells: updated_cells }
         end
         
         # TODO, err handling?

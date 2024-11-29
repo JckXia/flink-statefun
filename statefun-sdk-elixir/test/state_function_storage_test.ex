@@ -58,13 +58,32 @@ defmodule StateFuncStorageTest do
 
         updated_cell = storage.cells[@state_name]
         assert updated_cell != nil
-        assert updated_cell.state_status == :MODIFIED
+        assert updated_cell.state_status == :MODIFY
         
         res = 
         storage 
         |> StateFun.Address.AddressedScopedStorage.get(@counter_state_spec)
 
         assert res == 120
+    end
+
+    test "Should remove the value from an storage object" do
+        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: @counter_state_spec}
+        {:ok, init_state } = StateFun.init([func_spec])
+
+        storage = StateFun.Address.AddressedScopedStorage.extractKnownStateFromSpec(@func_addr, init_state, @indexed_state_recv_from_flink)
+        # Equivalent to ctx.storage().set(value_spec, value)
+        storage = storage 
+            |> StateFun.Address.AddressedScopedStorage.set(@counter_state_spec, 120)
+        
+
+        storage = storage
+            |> StateFun.Address.AddressedScopedStorage.remove(@counter_state_spec)
+
+        assert storage != nil
+        updated_cell = storage.cells[@state_name]
+        assert updated_cell.state_status == :DELETE
+        assert updated_cell.state_value == nil
     end
 
 end
