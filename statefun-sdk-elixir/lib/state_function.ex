@@ -28,8 +28,6 @@ defmodule StateFun do
             typedvalue.typename == StateFun.get_int_type()
         end
 
-        # Convert a TypedValue object into the actual state it represents
-        #   (In this case int)
         def as_int(typedvalue) do
             Io.Statefun.Sdk.Types.IntWrapper.decode(typedvalue.value).value
         end
@@ -107,7 +105,7 @@ defmodule StateFun do
     end
 
     # Pseudo-code:
-    #   -> For each item in storage, if :MODIFIED
+    #   -> For each item in storage, if :MODIFIED/:DELETED
     #       -> create PersistedValueMutation object
     #           -> state_name: string
     #           -> state_value: cell.state_value
@@ -136,9 +134,8 @@ defmodule StateFun do
         %Io.Statefun.Sdk.Reqreply.FromFunction.Invocation{target: pbAddr, argument: pbArg}
     end
 
+    # PersistedValue is what Flink gives
      def indexReceivedStateFromFlink(stateFunStates) do
-            # IO.inspect("[SDK] Received state from #{inspect(stateFunStates)}")
-                    
             stateFunStates
             |> Enum.map(fn state -> {state.state_name, state.state_value} end)
             |> Enum.into(%{})
@@ -262,37 +259,76 @@ defmodule StateFun do
             cell.state_value
         end
 
+        # TODO add support for delete
         def delete(cell) do
             %Address.AddressedScopedStorage.Cell{ cell | state_value: nil, state_status: :DELETED}
+        end
+
+        # TODO replace the other function later on
+        def get_internal(cell) do
+            deserialized_val = try_decode_typed_value(cell.state_value)
+            extract_deserialized_value(deserialized_val)
+        end
+
+        def set_internal(cell, value) do
+            new_typed_val = serialize(cell.state_value.typename, value)
+            %Address.AddressedScopedStorage.Cell{ cell | state_value: new_typed_val, state_status: :MODIFIED}
+        end
+
+        defp serialize(typename, value) when typename == "io.statefun.types/int" do
+           StateFun.TypedValue.from_int(value)
+        end
+
+        # TODO figure out best way to manage types. (Supply an s/derializer map?)
+        defp try_decode_typed_value(state_value) when state_value.typename == "io.statefun.types/int" do 
+            Io.Statefun.Sdk.Types.IntWrapper.decode(state_value.value)
+        end
+
+        defp try_decode_typed_value(state_value) when state_value == nil do
+            nil
+        end
+
+        defp extract_deserialized_value(nil) do
+            nil 
+        end
+        
+        defp extract_deserialized_value(state_value) do
+            state_value.value
         end
     end
     
     defmodule Address.AddressedScopedStorage do
-
-        # [Io.Statefun.Sdk.Reqreply.ToFunction.PersistedValue]
-        def indexReceivedStateFromFlink(stateFunStates) do
-            IO.inspect("[SDK] Received state from #{inspect(stateFunStates)}")
-                    
-            stateFunStates
-            |> Enum.map(fn state -> {state.state_name, state.state_value} end)
-            |> Enum.into(%{})
-        end
-
-        def find_missing_value_specs(functionSpec, stateReceivedFromFlink) do 
-            
-            missing = Enum.filter(functionSpec, fn {_spec, func_spec} -> func_spec.state_value_specs != nil end) 
-                    |>  Enum.reduce(%{}, fn {func_name, func_spec}, acc -> 
-                            state_value_spec = func_spec.state_value_specs
-                            if stateReceivedFromFlink[state_value_spec.name] == nil do
-                                Map.put(acc, state_value_spec.name, state_value_spec)
-                            end  
-
-                        end)     
-            IO.inspect("We are missing valueSpecs ack from Flink #{inspect(missing)}")
-            missing
+        # Todo: Cell is a map, but can easily be an list
+        defstruct [:cells]
+        
+        # Assume valueSpec.name is found
+        def get(storage, valueSpec) do
+            get_target_cell(storage, valueSpec)
+            |> Address.AddressedScopedStorage.Cell.get_internal()
         end
         
-        # TODO error handling + refactor, but assume happy path for now
+        # ValueSpec<T>, T
+        def set(storage, valueSpec, value) do           
+            new_cell = get_target_cell(storage, valueSpec)
+                        |> Address.AddressedScopedStorage.Cell.set_internal(value)
+                    
+            updated_cells = Map.put(storage.cells, valueSpec.name, new_cell)
+            %{storage | cells: updated_cells }    
+        end
+
+        def remove(storage, valueSpec) do
+            storage
+        end
+
+        defp get_target_cell(storage, valueSpec) do
+            storage.cells[valueSpec.name]
+        end
+
+        def get_cells(funcAddress, functionSpec, stateReceivedFromFlink) do 
+            cells = extractKnownStateFromSpec(funcAddress, functionSpec, stateReceivedFromFlink)
+            %__MODULE__{cells: cells}
+        end
+        # Construct an AddressScoped storage object from state given by Flink
         def extractKnownStateFromSpec(funcAddress, functionSpec, stateReceivedFromFlink) do
             storage_object = %{}
             
