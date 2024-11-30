@@ -144,12 +144,23 @@ defmodule StateFun do
     def find_missing_value_specs(functionSpec, stateReceivedFromFlink) do 
         missing = Enum.filter(functionSpec, fn {_spec, func_spec} -> func_spec.state_value_specs != nil end) 
                 |>  Enum.reduce(%{}, fn {func_name, func_spec}, acc -> 
-                        state_value_spec = func_spec.state_value_specs
-                        if value_spec_found?(state_value_spec.name, stateReceivedFromFlink) == false do
-                            Map.put(acc, state_value_spec.name, state_value_spec)
-                        end 
+                        state_value_spec_list = func_spec.state_value_specs
+                        collect_missing_value_specs(state_value_spec_list, stateReceivedFromFlink, acc)
                 end)
         missing
+    end
+
+    defp collect_missing_value_specs([] = _state_spec_list, _stateReceivedFromFlink, acc) do
+        acc 
+    end
+
+    defp collect_missing_value_specs([state_value_spec | tail] = _state_spec_list, stateReceivedFromFlink, acc) do
+        if value_spec_found?(state_value_spec.name, stateReceivedFromFlink) == false do
+           acc = Map.put(acc, state_value_spec.name, state_value_spec)
+           collect_missing_value_specs(tail, stateReceivedFromFlink, acc)
+        else
+            acc
+        end
     end
 
     defp value_spec_found?(state_name, stateMap) when map_size(stateMap) == 0  do 
@@ -331,30 +342,36 @@ defmodule StateFun do
             storage.cells[valueSpec.name]
         end
 
-  
+        # Semantic: Using the functionSpec pointed to by funcAddress (as a template), construct an object
+        #   containing the valueSpec name mapped to actual state sent by Flink
         def convertFlinkStateIntoFunctionScopedStorage(funcAddress, functionSpec, stateReceivedFromFlink) do
             functionSpec[funcAddress.func_type]
             |> generate_cells_from_function_spec(stateReceivedFromFlink)
         end
 
-        defp generate_cells_from_function_spec(target_function_spec, stateReceivedFromFlink) when target_function_spec.state_value_specs  == nil do
+        defp generate_cells_from_function_spec(target_function_spec, stateReceivedFromFlink) when length(target_function_spec.state_value_specs) == 0 do
             %__MODULE__{cells: %{}}
         end
         
         defp generate_cells_from_function_spec(target_function_spec, stateReceivedFromFlink) do
-            cells = %{}
-
-            # TODO make this a list
-            state_value_spec = target_function_spec.state_value_specs
-            state_name = state_value_spec.name
-
-            state_val_supplied_by_flink = stateReceivedFromFlink[state_name]
+            state_spec_lst = target_function_spec.state_value_specs
             
-            cell = %Address.AddressedScopedStorage.Cell{state_value: state_val_supplied_by_flink}
-            cells =  Map.put(cells, state_value_spec.name, cell)
+            cells = generate_cells_from_value_spec_list(state_spec_lst, stateReceivedFromFlink, %{})
             %__MODULE__{cells: cells}
-        end 
+        end
     
+        defp generate_cells_from_value_spec_list([], _stateReceivedFromFlink, cells) do
+            cells
+        end
+        
+        defp generate_cells_from_value_spec_list([state_value_spec | tail] = _state_spec_list, stateReceivedFromFlink, cells) do
+            state_name = state_value_spec.name
+            state_val_supplied_by_flink = stateReceivedFromFlink[state_name]
+            new_cell = %Address.AddressedScopedStorage.Cell{state_value: state_val_supplied_by_flink}
+            cells = Map.put(cells, state_name, new_cell)
+            generate_cells_from_value_spec_list(tail, stateReceivedFromFlink, cells)
+        end
+
     end
 
  

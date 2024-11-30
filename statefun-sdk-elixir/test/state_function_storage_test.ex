@@ -13,29 +13,29 @@ defmodule StateFuncStorageTest do
     @counter_state_spec  %StateFun.ValueSpecs{name: @state_name, type: @state_fun_int_type}
      
     test "Should generate an storage object (StateFun.Address.AddressedScopedStorage)" do
-        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: @counter_state_spec}
+        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: [@counter_state_spec]}
         {:ok, init_state } = StateFun.init([func_spec])
 
-        storage = StateFun.Address.AddressedScopedStorage.extractKnownStateFromSpec(@func_addr, init_state, @indexed_state_recv_from_flink)
+        storage = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(@func_addr, init_state, @indexed_state_recv_from_flink)
         assert storage != nil
         assert map_size(storage.cells) == 1
     end
 
 
     test "Should generate an storage object when state is empty (StateFun.Address.AddressedScopedStorage)" do
-        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: @counter_state_spec}
+        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: [@counter_state_spec]}
         {:ok, init_state } = StateFun.init([func_spec])
 
-        storage = StateFun.Address.AddressedScopedStorage.extractKnownStateFromSpec(@func_addr, init_state, @indexed_empty_state_recv_from_flink)
+        storage = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(@func_addr, init_state, @indexed_empty_state_recv_from_flink)
         assert storage != nil
         assert storage.cells[@state_name].state_value == nil
     end
 
     test "Should get the value from an Storage object" do
-        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: @counter_state_spec}
+        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: [@counter_state_spec]}
         {:ok, init_state } = StateFun.init([func_spec])
 
-        storage = StateFun.Address.AddressedScopedStorage.extractKnownStateFromSpec(@func_addr, init_state, @indexed_state_recv_from_flink)
+        storage = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(@func_addr, init_state, @indexed_state_recv_from_flink)
         
         # Equivalent to ctx.storage().get(ValueSpec) in the Java SDK
         res = storage 
@@ -45,10 +45,10 @@ defmodule StateFuncStorageTest do
     end
 
     test "Should set the value from an storage object" do
-        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: @counter_state_spec}
+        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: [@counter_state_spec]}
         {:ok, init_state } = StateFun.init([func_spec])
 
-        storage = StateFun.Address.AddressedScopedStorage.extractKnownStateFromSpec(@func_addr, init_state, @indexed_state_recv_from_flink)
+        storage = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(@func_addr, init_state, @indexed_state_recv_from_flink)
         # Equivalent to ctx.storage().set(value_spec, value)
         storage = storage 
             |> StateFun.Address.AddressedScopedStorage.set(@counter_state_spec, 120)
@@ -68,10 +68,10 @@ defmodule StateFuncStorageTest do
     end
 
     test "Should remove the value from an storage object" do
-        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: @counter_state_spec}
+        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: [@counter_state_spec]}
         {:ok, init_state } = StateFun.init([func_spec])
 
-        storage = StateFun.Address.AddressedScopedStorage.extractKnownStateFromSpec(@func_addr, init_state, @indexed_state_recv_from_flink)
+        storage = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(@func_addr, init_state, @indexed_state_recv_from_flink)
         # Equivalent to ctx.storage().set(value_spec, value)
         storage = storage 
             |> StateFun.Address.AddressedScopedStorage.set(@counter_state_spec, 120)
