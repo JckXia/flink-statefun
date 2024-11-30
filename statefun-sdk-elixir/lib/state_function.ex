@@ -251,25 +251,11 @@ defmodule StateFun do
         def cancelDelayedMessage(cancellationToken) do end
     end
  
-     # An 3-uple object, tracks state information
-    #   -> on set, status mutates to MODIFIED
-    #   -> on remove, status mutates to DELETED
-    #   (Needed by Flink/StateFun runtime to know what to do with state)
+     # An internal, 3-uple object, tracks state information
+    #   -> on set, status mutates to MODIFIY
+    #   -> on remove, status mutates to DELETE
     defmodule Address.AddressedScopedStorage.Cell do 
         defstruct [state_value: nil, state_status: :UNMODIFIED]
-
-        def set(cell, new_val) do
-            %Address.AddressedScopedStorage.Cell{ cell | state_value: new_val, state_status: :MODIFIED}
-        end
-
-        def get(cell) do
-            cell.state_value
-        end
-
-        # TODO add support for delete
-        def delete(cell) do
-            %Address.AddressedScopedStorage.Cell{ cell | state_value: nil, state_status: :DELETE}
-        end
 
         # TODO replace the other function later on
         def get_internal(cell) do
