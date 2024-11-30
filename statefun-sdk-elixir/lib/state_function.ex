@@ -256,7 +256,7 @@ defmodule StateFun do
     #   -> on remove, status mutates to DELETED
     #   (Needed by Flink/StateFun runtime to know what to do with state)
     defmodule Address.AddressedScopedStorage.Cell do 
-        defstruct [state_type: nil, state_value: nil, state_status: :UNMODIFIED]
+        defstruct [state_value: nil, state_status: :UNMODIFIED]
 
         def set(cell, new_val) do
             %Address.AddressedScopedStorage.Cell{ cell | state_value: new_val, state_status: :MODIFIED}
