@@ -1,26 +1,3 @@
-# Functions of interest
-#   -> extractKnownStateFromSpec
-#   -> find_missing_value_specs
-
-# Brain storm:
-#   -> Current Data-structure/relationships:
-#       -> 1 FunctionSpec mapped to (at most) 1 state ValueSpec
-#       -> find_missing_value_specs(func_state, flink_state) semantics:, O(n), where n is number of funcSpecs (implicity valueSpec)
-#           -> flink give us all the state it knows about
-#           -> our funcState provides an global "func_spec_name" => state_spec mapping
-#           -> Current solution iterates over funcState to find value state... (This is alright)
-#      -> extractKnownStateFromSpec(funcAddress, functionSpec, flinkStateValState)
-#           -> an functionAddress (funcType)
-#           -> global functionSpec
-#           -> flinkState (key'd by state_name)  
-#
-#  -> Change Delta:
-#   -> refactor extractKnownStateFromSpec logic a bit (Done):
-#       -> we known funcAddress.func_type is the "key" here. Just perform an lookup for this given function
-#       -> Data access pattern:
-#   
-#   -> FunctionSpecs.state_value_specs (should be an list)
-#   
 defmodule StateFuncStorageTest do
     use ExUnit.Case
     alias StateFun
