@@ -257,9 +257,6 @@ defmodule StateFun do
     #   (Needed by Flink/StateFun runtime to know what to do with state)
     defmodule Address.AddressedScopedStorage.Cell do 
         defstruct [state_type: nil, state_value: nil, state_status: :UNMODIFIED]
-        def init(state_type) do
-            %Address.AddressedScopedStorage.Cell{state_type: state_type}
-        end
 
         def set(cell, new_val) do
             %Address.AddressedScopedStorage.Cell{ cell | state_value: new_val, state_status: :MODIFIED}
