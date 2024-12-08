@@ -5,9 +5,6 @@
 #     -> get the raw value from TypeValue<T>
 #     -> get the deserializer from Type<T>
 #     -> decode into expected format using the deserializer()
-
-## 
-
 defmodule StateFun.TypeSerializer do
     @callback serialize(object :: any()) :: any()
     @callback deserialize(object :: any()) :: any()

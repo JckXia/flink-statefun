@@ -26,3 +26,11 @@ defmodule StateFun.Message do
         %__MODULE__{targetAddress: targetAddr, typedValue: typed_value}
     end
 end
+
+
+defmodule StateFun.EgressMessage do 
+    defstruct [:typename, :payload]
+     def init(typename, payload) do 
+        %__MODULE__{typename: typename, payload: payload}
+    end
+end

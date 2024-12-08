@@ -1,8 +1,6 @@
 defmodule StateFun do  
     use GenServer
 
-    @state_fun_int_type "io.statefun.types/int"
-
     @impl true
     def init(function_specs) do
         init_state  =
@@ -14,10 +12,6 @@ defmodule StateFun do
 
     def bind(function_spec) do
         {function_spec.type_name, function_spec}
-    end
-
-    def get_int_type() do
-      @state_fun_int_type
     end
 
     @impl True
@@ -175,146 +169,6 @@ defmodule StateFun do
     defp assert_protobuf_req_not_null(invocation_request) do
     end
 
-    # TODO refactor these into seperate files
-    defmodule EgressMessage do 
-        defstruct [:typename, :payload]
-         def init(typename, payload) do 
-            %EgressMessage{typename: typename, payload: payload}
-        end
-    end
-
-    defmodule Context  do
-        alias StateFun
-        alias StateFun.Message
-        defstruct [:storage, :self, :internalContext]
-
-        defmodule InternalContext do 
-            defstruct [caller: nil, sent: [], egress: [], delayed: []]
-        end 
-     
-        # Self is the Address of current function
-        def init(self, storage) do
-            %Context{storage: storage, self: self, internalContext: %InternalContext{}}
-        end
-
-        def send(context, %StateFun.Message{} = msg) do        
-            updatedSent = [msg] ++ context.internalContext.sent
-            internalContext = %InternalContext{context.internalContext | sent: updatedSent}
-    
-            %Context{context | internalContext: internalContext}
-        end
-
-        def send(context, %StateFun.EgressMessage{} = msg) do 
-            IO.inspect("Dispatch egress messages!")
-            context
-        end 
-
-
-        # TODO once we are confident simple send works
-        def sendAfter(delay, message, cancellationToken) do end
-        def cancelDelayedMessage(cancellationToken) do end
-    end
- 
-     # An internal, 3-uple object, tracks state information
-    #   -> on set, status mutates to MODIFIY
-    #   -> on remove, status mutates to DELETE
-    defmodule Address.AddressedScopedStorage.Cell do 
-        defstruct [state_value: nil, state_status: :UNMODIFIED]
-
-        # TBD. This assumes the valueSpec matches up with the TypedValue we are deserializing
-        #   -> What if user passes an valueSpec that doesn't quite match up?
-        #       -> Need an error handling comb over, and look at what Java SDK is doing
-        def get_internal(cell, valueSpec) do
-            if cell.state_value == nil do
-                nil
-            else
-                valueSpec.type.type_serializer.deserialize(cell.state_value.value)
-            end
-        end
-
-        def set_internal(cell, valueSpec, value) do
-            new_value = valueSpec.type.type_serializer.serialize(value)
-            new_typed_val = %Io.Statefun.Sdk.Reqreply.TypedValue{typename: valueSpec.type.type_name, has_value: true,  value: new_value}
-            %Address.AddressedScopedStorage.Cell{ cell | state_value: new_typed_val, state_status: :MODIFY}
-        end
-
-        def delete_internal(cell) do
-            %Address.AddressedScopedStorage.Cell{ cell | state_value: nil, state_status: :DELETE}
-        end
-    end
-    
-    defmodule Address.AddressedScopedStorage do
-        # Todo: Cell is a map, but can easily be an list
-        defstruct [:cells]
-        
-        # Assume valueSpec.name is found
-        def get(storage, valueSpec) do
-            get_target_cell(storage, valueSpec)
-            |> Address.AddressedScopedStorage.Cell.get_internal(valueSpec)
-        end
-        
-        # ValueSpec<T>, T
-        def set(storage, valueSpec, value) do           
-            new_cell = get_target_cell(storage, valueSpec)
-                        |> Address.AddressedScopedStorage.Cell.set_internal(valueSpec, value)
-                    
-            updated_cells = Map.put(storage.cells, valueSpec.name, new_cell)
-            %{storage | cells: updated_cells }    
-        end
-
-        def remove(storage, valueSpec) do
-            deleted_cell = get_target_cell(storage, valueSpec)
-                            |> Address.AddressedScopedStorage.Cell.delete_internal()
-            updated_cells = Map.put(storage.cells, valueSpec.name, deleted_cell)
-            %{storage | cells: updated_cells}
-        end
-        
-        # TODO, err handling?
-        defp get_target_cell(storage, valueSpec) do
-            storage.cells[valueSpec.name]
-        end
-
-        # Semantic: Using the functionSpec pointed to by funcAddress (as a template), construct an object
-        #   containing the valueSpec name mapped to actual state sent by Flink
-        def convertFlinkStateIntoFunctionScopedStorage(funcAddress, functionSpec, stateReceivedFromFlink) do
-            functionSpec[funcAddress.func_type]
-            |> generate_cells_from_function_spec(stateReceivedFromFlink)
-        end
-
-        defp generate_cells_from_function_spec(target_function_spec, stateReceivedFromFlink) when length(target_function_spec.state_value_specs) == 0 do
-            %__MODULE__{cells: %{}}
-        end
-        
-        defp generate_cells_from_function_spec(target_function_spec, stateReceivedFromFlink) do
-            state_spec_lst = target_function_spec.state_value_specs
-            
-            cells = generate_cells_from_value_spec_list(state_spec_lst, stateReceivedFromFlink, %{})
-            %__MODULE__{cells: cells}
-        end
-    
-        defp generate_cells_from_value_spec_list([], _stateReceivedFromFlink, cells) do
-            cells
-        end
-        
-        defp generate_cells_from_value_spec_list([state_value_spec | tail] = _state_spec_list, stateReceivedFromFlink, cells) do
-            state_name = state_value_spec.name
-            state_val_supplied_by_flink = stateReceivedFromFlink[state_name]
-            new_cell = %Address.AddressedScopedStorage.Cell{state_value: state_val_supplied_by_flink}
-            cells = Map.put(cells, state_name, new_cell)
-            generate_cells_from_value_spec_list(tail, stateReceivedFromFlink, cells)
-        end
-
-    end
-
- 
-
-    defmodule Address do 
-        defstruct [:func_namespace, :func_type, :func_id]
-        def init(func_namespace, func_type, func_id) do
-            %Address{func_namespace: func_namespace, func_type: func_type, func_id: func_id}
-        end
-    end
-
     # TODO make state_value_specs a list, not just an attribute
     defmodule FunctionSpecs do
         defstruct [:type_name, :function_callback, :state_value_specs]
@@ -323,5 +177,4 @@ defmodule StateFun do
     defmodule ValueSpecs do
         defstruct [:name, :type]
     end
-
 end
