@@ -10,10 +10,11 @@ defmodule StateFuncStorageTest do
     @indexed_empty_state_recv_from_flink %{@state_name => nil}
 
     @func_addr StateFun.Address.init("com.test.funcs","agg_func", "1")
-    @counter_state_spec  %StateFun.ValueSpecs{name: @state_name, type: @state_fun_int_type}
+
+    @counter_state_spec  %StateFun.ValueSpecs{name: @state_name, type: StateFun.IntType}
      
     test "Should generate an storage object (StateFun.Address.AddressedScopedStorage)" do
-        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: [@counter_state_spec]}
+        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn _a -> 2 end, state_value_specs: [@counter_state_spec]}
         {:ok, init_state } = StateFun.init([func_spec])
 
         storage = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(@func_addr, init_state, @indexed_state_recv_from_flink)
@@ -23,7 +24,7 @@ defmodule StateFuncStorageTest do
 
 
     test "Should generate an storage object when state is empty (StateFun.Address.AddressedScopedStorage)" do
-        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: [@counter_state_spec]}
+        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn _a -> 2 end, state_value_specs: [@counter_state_spec]}
         {:ok, init_state } = StateFun.init([func_spec])
 
         storage = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(@func_addr, init_state, @indexed_empty_state_recv_from_flink)
@@ -32,7 +33,7 @@ defmodule StateFuncStorageTest do
     end
 
     test "Should get the value from an Storage object" do
-        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: [@counter_state_spec]}
+        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn _a -> 2 end, state_value_specs: [@counter_state_spec]}
         {:ok, init_state } = StateFun.init([func_spec])
 
         storage = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(@func_addr, init_state, @indexed_state_recv_from_flink)
@@ -45,7 +46,7 @@ defmodule StateFuncStorageTest do
     end
 
     test "Should set the value from an storage object" do
-        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: [@counter_state_spec]}
+        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn _a -> 2 end, state_value_specs: [@counter_state_spec]}
         {:ok, init_state } = StateFun.init([func_spec])
 
         storage = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(@func_addr, init_state, @indexed_state_recv_from_flink)
@@ -53,6 +54,7 @@ defmodule StateFuncStorageTest do
         storage = storage 
             |> StateFun.Address.AddressedScopedStorage.set(@counter_state_spec, 120)
         
+     
         assert storage != nil
         assert map_size(storage.cells) == 1
 
@@ -68,7 +70,7 @@ defmodule StateFuncStorageTest do
     end
 
     test "Should remove the value from an storage object" do
-        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn a -> 2 end, state_value_specs: [@counter_state_spec]}
+        func_spec = %StateFun.FunctionSpecs{type_name: "agg_func", function_callback: fn _a -> 2 end, state_value_specs: [@counter_state_spec]}
         {:ok, init_state } = StateFun.init([func_spec])
 
         storage = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(@func_addr, init_state, @indexed_state_recv_from_flink)

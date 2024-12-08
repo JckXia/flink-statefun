@@ -20,25 +20,6 @@ defmodule StateFun do
       @state_fun_int_type
     end
 
-    # TODO: This abstraction is incorrect. Fix this
-    defmodule TypedValue do 
-        defstruct [typedname: nil, has_value: false, value: nil]
-        
-        def is_int(typedvalue) do 
-            typedvalue.typename == StateFun.get_int_type()
-        end
-
-        def as_int(typedvalue) do
-            Io.Statefun.Sdk.Types.IntWrapper.decode(typedvalue.value).value
-        end
-
-        def from_int(int_val) do
-            basic_int = %Io.Statefun.Sdk.Types.IntWrapper{value: int_val}
-            wrapper = Io.Statefun.Sdk.Types.IntWrapper.encode(basic_int)
-            %Io.Statefun.Sdk.Reqreply.TypedValue{typename: StateFun.get_int_type(), has_value: true, value: wrapper}
-        end
-    end
-
     @impl True
     def handle_call({:async_invoke, raw_body}, _from, state) do 
         toFn = Io.Statefun.Sdk.Reqreply.ToFunction.decode(raw_body).request
@@ -57,7 +38,7 @@ defmodule StateFun do
             |> Enum.map(fn {state_name, state_value_spec} -> 
             %Io.Statefun.Sdk.Reqreply.FromFunction.PersistedValueSpec{state_name: state_name, 
             expiration_spec: nil,
-            type_typename: state_value_spec.type}
+            type_typename: state_value_spec.type.type_name}
         end)
 
         invocationResponse = %Io.Statefun.Sdk.Reqreply.FromFunction.IncompleteInvocationContext{missing_values: missing_values}
@@ -240,39 +221,25 @@ defmodule StateFun do
     defmodule Address.AddressedScopedStorage.Cell do 
         defstruct [state_value: nil, state_status: :UNMODIFIED]
 
-        def get_internal(cell) do
-            deserialized_val = try_decode_typed_value(cell.state_value)
-            extract_deserialized_value(deserialized_val)
+        # TBD. This assumes the valueSpec matches up with the TypedValue we are deserializing
+        #   -> What if user passes an valueSpec that doesn't quite match up?
+        #       -> Need an error handling comb over, and look at what Java SDK is doing
+        def get_internal(cell, valueSpec) do
+            if cell.state_value == nil do
+                nil
+            else
+                valueSpec.type.type_serializer.deserialize(cell.state_value.value)
+            end
         end
 
         def set_internal(cell, valueSpec, value) do
-            new_typed_val = serialize(valueSpec.type, value)
+            new_value = valueSpec.type.type_serializer.serialize(value)
+            new_typed_val = %Io.Statefun.Sdk.Reqreply.TypedValue{typename: valueSpec.type.type_name, has_value: true,  value: new_value}
             %Address.AddressedScopedStorage.Cell{ cell | state_value: new_typed_val, state_status: :MODIFY}
         end
 
         def delete_internal(cell) do
             %Address.AddressedScopedStorage.Cell{ cell | state_value: nil, state_status: :DELETE}
-        end
-
-        defp serialize(typename, value) when typename == "io.statefun.types/int" do
-           StateFun.TypedValue.from_int(value)
-        end
-
-        # TODO figure out best way to manage types. (Supply an s/derializer map?)
-        defp try_decode_typed_value(state_value) when state_value.typename == "io.statefun.types/int" do 
-            Io.Statefun.Sdk.Types.IntWrapper.decode(state_value.value)
-        end
-
-        defp try_decode_typed_value(state_value) when state_value == nil do
-            nil
-        end
-
-        defp extract_deserialized_value(nil) do
-            nil 
-        end
-        
-        defp extract_deserialized_value(state_value) do
-            state_value.value
         end
     end
     
@@ -283,7 +250,7 @@ defmodule StateFun do
         # Assume valueSpec.name is found
         def get(storage, valueSpec) do
             get_target_cell(storage, valueSpec)
-            |> Address.AddressedScopedStorage.Cell.get_internal()
+            |> Address.AddressedScopedStorage.Cell.get_internal(valueSpec)
         end
         
         # ValueSpec<T>, T
@@ -299,7 +266,7 @@ defmodule StateFun do
             deleted_cell = get_target_cell(storage, valueSpec)
                             |> Address.AddressedScopedStorage.Cell.delete_internal()
             updated_cells = Map.put(storage.cells, valueSpec.name, deleted_cell)
-            %{storage | cells: updated_cells }
+            %{storage | cells: updated_cells}
         end
         
         # TODO, err handling?
