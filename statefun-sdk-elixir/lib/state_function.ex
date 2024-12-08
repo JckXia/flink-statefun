@@ -20,7 +20,7 @@ defmodule StateFun do
       @state_fun_int_type
     end
 
-
+    # TODO: This abstraction is incorrect. Fix this
     defmodule TypedValue do 
         defstruct [typedname: nil, has_value: false, value: nil]
         
@@ -53,6 +53,32 @@ defmodule StateFun do
 
         def is_int_msg(message) do 
             TypedValue.is_int(message.typedValue)
+        end
+
+        ## TODO replacing the existing Message decoding with this
+        def is_int(message) do
+            is(message, StateFun.IntType)
+        end
+        
+        def as_int(message) do
+            as(message, StateFun.IntType)
+        end
+
+        def is(message, type) do
+            message.typedValue.typename == type.type_name()
+        end
+
+        def as(message, type) do
+            typed_value = message.typedValue
+            type.type_serializer.deserialize(typed_value.value)
+        end
+
+        def build(targetAddr, value, type) do
+            type_serializer = type.type_serializer
+            serialized_value = type_serializer.serialize(value)
+
+            typed_value = %Io.Statefun.Sdk.Reqreply.TypedValue{typename: type.type_name, has_value: true, value: serialized_value}
+            %__MODULE__{targetAddress: targetAddr, typedValue: typed_value}
         end
     end
 
@@ -257,7 +283,6 @@ defmodule StateFun do
     defmodule Address.AddressedScopedStorage.Cell do 
         defstruct [state_value: nil, state_status: :UNMODIFIED]
 
-        # TODO replace the other function later on
         def get_internal(cell) do
             deserialized_val = try_decode_typed_value(cell.state_value)
             extract_deserialized_value(deserialized_val)
