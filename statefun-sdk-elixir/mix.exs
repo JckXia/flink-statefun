@@ -21,7 +21,8 @@ defmodule ApacheFlinkStateFun.Umbrella.MixProject do
   defp deps do
   [
     {:plug_cowboy, "~> 2.5"},
-    {:protobuf, "~> 0.13.0"}
+    {:protobuf, "~> 0.13.0"},
+    {:json, "~> 1.4"}
   ]
 end
 

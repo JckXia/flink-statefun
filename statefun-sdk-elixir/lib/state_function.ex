@@ -39,49 +39,6 @@ defmodule StateFun do
         end
     end
 
-    defmodule Message do
-        defstruct [targetAddress: nil, typedValue: nil]
-        
-        def as_int_msg(message) do
-            TypedValue.as_int(message.typedValue)
-        end
-
-        def build_int_msg(targetAddr, int_val) do 
-            encoded_payload = TypedValue.from_int(int_val)
-            %StateFun.Message{targetAddress: targetAddr, typedValue: encoded_payload}
-        end
-
-        def is_int_msg(message) do 
-            TypedValue.is_int(message.typedValue)
-        end
-
-        ## TODO replacing the existing Message decoding with this
-        def is_int(message) do
-            is(message, StateFun.IntType)
-        end
-        
-        def as_int(message) do
-            as(message, StateFun.IntType)
-        end
-
-        def is(message, type) do
-            message.typedValue.typename == type.type_name()
-        end
-
-        def as(message, type) do
-            typed_value = message.typedValue
-            type.type_serializer.deserialize(typed_value.value)
-        end
-
-        def build(targetAddr, value, type) do
-            type_serializer = type.type_serializer
-            serialized_value = type_serializer.serialize(value)
-
-            typed_value = %Io.Statefun.Sdk.Reqreply.TypedValue{typename: type.type_name, has_value: true, value: serialized_value}
-            %__MODULE__{targetAddress: targetAddr, typedValue: typed_value}
-        end
-    end
-
     @impl True
     def handle_call({:async_invoke, raw_body}, _from, state) do 
         toFn = Io.Statefun.Sdk.Reqreply.ToFunction.decode(raw_body).request
