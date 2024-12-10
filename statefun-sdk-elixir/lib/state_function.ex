@@ -55,6 +55,7 @@ defmodule StateFun do
 
         invocationResponse = invocationResponse 
                             |> aggregate_sent_messages(updatedContextObject.internalContext.sent)
+                            |> aggregate_egress_messages(updatedContextObject.internalContext.egress)
                             |> aggregate_state_mutations(updatedContextObject.storage)
 
         fromFunc = %Io.Statefun.Sdk.Reqreply.FromFunction{response: {:invocation_result, invocationResponse}}
@@ -79,8 +80,15 @@ defmodule StateFun do
     defp aggregate_sent_messages(invocationResponse, sentMessages) do 
         outGoingMsg = sentMessages
         |> Enum.map(fn msg -> sent_msg_to_pb(msg) end)
-        invocationResponse =%Io.Statefun.Sdk.Reqreply.FromFunction.InvocationResponse{ invocationResponse | outgoing_messages: outGoingMsg }
-        invocationResponse
+        %Io.Statefun.Sdk.Reqreply.FromFunction.InvocationResponse{ invocationResponse | outgoing_messages: outGoingMsg }
+    end
+
+    defp aggregate_egress_messages(invocationResponse, sentEgressMesssages) do 
+        %Io.Statefun.Sdk.Reqreply.FromFunction.InvocationResponse{ invocationResponse | outgoing_egresses: sentEgressMesssages }
+    end
+    
+    defp egress_msg_to_pb(egressMsg) do
+
     end
 
     defp sent_msg_to_pb(sentMsg) do

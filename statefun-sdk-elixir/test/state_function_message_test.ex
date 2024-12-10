@@ -1,7 +1,8 @@
 defmodule StateFuncMessageTest do
     use ExUnit.Case
     alias StateFun
-    
+    alias StateFun.KafkaProducerRecord
+
     @int_type_name "io.statefun.types/int"
     @bool_type_name "io.statefun.types/boolean"
     @custom_test_type_name "com.test.types/test_type"
@@ -62,6 +63,19 @@ defmodule StateFuncMessageTest do
         assert map_size(message_map) == 2
         assert message_map["name"] == "Jack"
         assert message_map["age"] == 25
+    end
+
+    test "should be able to bulid an KafkaProducerRecord into an Egress" do
+ 
+        # IO.inspect(k)
+        kafka_egress_record = KafkaProducerRecord.for_egress("com.test.egress", "dead-letter-queue")
+            |> KafkaProducerRecord.with_topic("food_delivery")
+            |> KafkaProducerRecord.with_key("1")
+            |> KafkaProducerRecord.with_value("1234")
+            |> KafkaProducerRecord.build()
+            
+        assert kafka_egress_record.egress_namespace == "com.test.egress"
+        assert kafka_egress_record.egress_type == "dead-letter-queue"
     end
 
     test "should serialize and deserialize custom types" do

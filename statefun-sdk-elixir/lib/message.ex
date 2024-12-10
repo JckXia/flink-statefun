@@ -27,6 +27,36 @@ defmodule StateFun.Message do
     end
 end
 
+defmodule StateFun.KafkaProducerRecord do
+    defstruct [key: nil, topic: nil, value: nil, namespace: nil, type: nil]
+    @kafka_typename "type.googleapis.com/io.statefun.sdk.egress.KafkaProducerRecord"
+
+
+    def with_topic(record, topic) do
+        %__MODULE__{record |  topic: topic }    
+    end
+
+    def with_key(record, key) do
+        %__MODULE__{record | key: key }
+    end
+
+    def with_value(record, value) do
+        %__MODULE__{record | value: value }
+    end
+
+    def for_egress(namespace, type) do
+        %__MODULE__{namespace: namespace, type: type}
+    end
+
+    def build(producer_record) do
+        namespace = producer_record.namespace
+        type = producer_record.type
+        pb_record = %Io.Statefun.Sdk.Egress.KafkaProducerRecord{key: producer_record.key, topic: producer_record.topic, value_bytes: producer_record.value}
+        raw_val = Io.Statefun.Sdk.Egress.KafkaProducerRecord.encode(pb_record)
+        egress_typed_val = %Io.Statefun.Sdk.Reqreply.TypedValue{typename: @kafka_typename, has_value: true, value: raw_val}
+        %Io.Statefun.Sdk.Reqreply.FromFunction.EgressMessage{egress_namespace: namespace, egress_type: type, argument: egress_typed_val}
+    end
+end
 
 defmodule StateFun.EgressMessage do 
     defstruct [:typename, :payload]

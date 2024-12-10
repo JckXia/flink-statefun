@@ -19,6 +19,14 @@ defmodule StateFun.Context  do
         %__MODULE__{context | internalContext: internalContext}
     end
 
+    # TODO: Would it make more sense for this to be SDK type instead? And have StateFun aggregation*   
+    #   functions handle the conversion to protobuf?
+    def send(context, %Io.Statefun.Sdk.Reqreply.FromFunction.EgressMessage{} = msg) do
+        updatedSent = [msg] ++ context.internalContext.egress
+        internalContext = %InternalContext{context.internalContext | egress: updatedSent} 
+        %__MODULE__{context | internalContext: internalContext}
+    end
+
     def send(context, %StateFun.EgressMessage{} = msg) do 
         IO.inspect("Dispatch egress messages!")
         context
