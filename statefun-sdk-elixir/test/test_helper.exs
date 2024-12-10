@@ -1,6 +1,6 @@
 ExUnit.start(capture_log: true)
 
-defmodule EventDispatchingService.TestHelper do
+defmodule ElixirStateFun.TestHelper do
   def random_string(), do: random_string(10)
 
   def random_string(length),
