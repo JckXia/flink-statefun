@@ -1,0 +1,62 @@
+defmodule StateFuncStorageTest do
+    use ExUnit.Case
+    alias StateFun
+    
+    @state_fun_int_type "io.statefun.types/int"
+
+    @state_spec  %StateFun.ValueSpecs{name: "counter", type: @state_fun_int_type}
+    @state_spec_2  %StateFun.ValueSpecs{name: "counter_2", type: @state_fun_int_type}
+    @typed_value StateFun.TypedValue.from_int(20)
+
+    @func_spec_stateless %StateFun.FunctionSpecs{type_name: "func_stateless", function_callback: nil, state_value_specs: []}
+    @func_spec_stateful %StateFun.FunctionSpecs{type_name: "func_stateful", function_callback: nil, state_value_specs: [@state_spec]}
+    @func_spec_stateful_multi %StateFun.FunctionSpecs{type_name: "func_stateful", function_callback: nil, state_value_specs: [@state_spec, @state_spec_2]}
+    # Blank state, should notify Flink about state specs not registered
+    test "received blank state from Apache Flink" do 
+        {:ok, init_state} = StateFun.init([@func_spec_stateless, @func_spec_stateful])
+
+        missing_specs = StateFun.find_missing_value_specs(init_state, %{})
+
+        assert map_size(missing_specs) == 1
+        assert Map.has_key?(missing_specs, "counter")        
+    end
+
+    # Ok, wow TIL but this is returning an nil. Not sure how the when guard didn't crash
+    test "received correct state from Flink" do 
+        {:ok, init_state} = StateFun.init([@func_spec_stateless, @func_spec_stateful])
+
+        missing_specs = StateFun.find_missing_value_specs(init_state, %{"counter" => nil})
+
+        assert map_size(missing_specs) == 0
+    end
+
+    test "should extract known state from specs (for stateless funcs)" do
+        {:ok, init_state} = StateFun.init([@func_spec_stateless, @func_spec_stateful])
+        func_addr = StateFun.Address.init("com.test", "func_stateless", "1")
+        storage_object = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(func_addr, init_state, %{})
+
+        assert storage_object != nil
+        assert map_size(storage_object.cells) == 0
+    end
+
+    test "should extract known state from specs (For statefun funcs)" do
+        {:ok, init_state} = StateFun.init([@func_spec_stateless, @func_spec_stateful])
+        func_addr = StateFun.Address.init("com.test", "func_stateful", "1")
+        storage_object = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(func_addr, init_state, %{"counter" => @typed_value})
+
+        assert storage_object != nil
+        assert map_size(storage_object.cells) == 1
+        assert storage_object.cells["counter"].state_status == :UNMODIFIED
+    end
+
+    test "d should extract known state from specs (For statefun funcs)" do
+        {:ok, init_state} = StateFun.init([@func_spec_stateless, @func_spec_stateful_multi])
+    
+        func_addr = StateFun.Address.init("com.test", "func_stateful", "1")
+        storage_object = StateFun.Address.AddressedScopedStorage.convertFlinkStateIntoFunctionScopedStorage(func_addr, init_state, %{"counter" => @typed_value , "counter_2" => @typed_value})
+        # IO.inspect(storage_object)
+        # assert storage_object != nil
+        # assert map_size(storage_object.cells) == 1
+        # assert storage_object.cells["counter"].state_status == :UNMODIFIED
+    end
+end
